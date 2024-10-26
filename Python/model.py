@@ -1,13 +1,15 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.model_selection import StratifiedKFold
 
 # Set up page configuration
-st.set_page_config(page_title="Data Analysis", layout="wide")
+st.set_page_config(page_title="Model Comparison", layout="wide")
 
 # Create a MySQL engine (replace with your MySQL credentials)
 engine = create_engine('mysql+mysqlconnector://root:minu2001@localhost/delivergate')
@@ -23,17 +25,14 @@ def load_data():
 customers_df, orders_df = load_data()
 
 # 1. Prepare the data for the model
-# Calculate total orders and total revenue per customer
 customer_orders = orders_df.groupby('customer_id').size()
 customer_revenue = orders_df.groupby('customer_id')['total_amount'].sum()
 
-# Create a DataFrame for machine learning
 data = pd.DataFrame({
     'total_orders': customer_orders,
     'total_revenue': customer_revenue
 }).reset_index()
 
-# Define repeat purchaser: 1 if total_orders > 1, else 0
 data['repeat_purchaser'] = (data['total_orders'] > 1).astype(int)
 
 # Display Class Distribution
@@ -45,46 +44,64 @@ st.write(data['repeat_purchaser'].value_counts().rename(index={0: "Non-repeat Cu
 if data['repeat_purchaser'].nunique() < 2:
     st.write("Not enough data to train the model. Please collect more data.")
 else:
-    # 3. Train-test split
+    # Prepare features and target variable
     X = data[['total_orders', 'total_revenue']]
     y = data['repeat_purchaser']
+
+    # Define models
+    models = {
+        "Logistic Regression": LogisticRegression(),
+        "Decision Tree": DecisionTreeClassifier(),
+        "Random Forest": RandomForestClassifier(),
+        "K-Nearest Neighbors": KNeighborsClassifier()
+    }
+
+    # Initialize dictionary to store results
+    results = {}
+
+    # Cross-validation setup
+    cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+    # Train and evaluate each model
+    for model_name, model in models.items():
+        accuracy_scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy')
+        precision_scores = cross_val_score(model, X, y, cv=cv, scoring='precision')
+        recall_scores = cross_val_score(model, X, y, cv=cv, scoring='recall')
+        f1_scores = cross_val_score(model, X, y, cv=cv, scoring='f1')
+        
+        # Store results
+        results[model_name] = {
+            "Accuracy": accuracy_scores.mean(),
+            "Precision": precision_scores.mean(),
+            "Recall": recall_scores.mean(),
+            "F1 Score": f1_scores.mean()
+        }
+
+    # Display Results
+    st.write("### Model Comparison Results")
+    results_df = pd.DataFrame(results).T
+    st.write(results_df)
+
+    # Identify the best model
+    best_model_name = results_df["F1 Score"].idxmax()
+    st.write(f"### Best Model: {best_model_name}")
+    st.write(f"**F1 Score**: {results_df.loc[best_model_name, 'F1 Score']:.2f}")
     
-    # Stratified split to maintain the proportion of classes in training and testing sets
+    # Train and evaluate the best model on a train-test split for final evaluation
+    st.write("### Training the Best Model on a Train-Test Split for Final Evaluation")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-
-    # 4. Train the logistic regression model
-    model = LogisticRegression()
-    model.fit(X_train, y_train)
-
-    # 5. Make predictions and calculate accuracy
-    y_pred = model.predict(X_test)
+    
+    best_model = models[best_model_name]
+    best_model.fit(X_train, y_train)
+    y_pred = best_model.predict(X_test)
+    
+    # Final evaluation metrics
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, zero_division=0)
     recall = recall_score(y_test, y_pred, zero_division=0)
     f1 = f1_score(y_test, y_pred, zero_division=0)
     
-    # Cross-validation for more reliable accuracy estimate
-    st.write("### Cross-Validation Results")
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy')
-    st.write(f"Cross-Validation Accuracy: {cv_scores.mean():.2f} ± {cv_scores.std():.2f}")
-    
-    # Display Results in Streamlit
-    st.write("### Model Performance on Test Set")
-    st.write(f"**Accuracy**: {accuracy:.2f}")
-    st.write(f"**Precision**: {precision:.2f}")
-    st.write(f"**Recall**: {recall:.2f}")
-    st.write(f"**F1 Score**: {f1:.2f}")
-
-    # Feature Coefficients
-    st.write("### Feature Coefficients (Logistic Regression)")
-    coefficients = pd.DataFrame(model.coef_, columns=['total_orders', 'total_revenue'])
-    st.write(coefficients)
-
-    # User-friendly Message Based on Performance
-    if accuracy > 0.8:
-        st.success("The model has a good accuracy in predicting repeat purchasers.")
-    elif accuracy > 0.6:
-        st.warning("The model accuracy is moderate. Consider adding more data or features for improvement.")
-    else:
-        st.error("The model accuracy is low. You might need more data or additional features.")
+    st.write(f"**Final Accuracy**: {accuracy:.2f}")
+    st.write(f"**Final Precision**: {precision:.2f}")
+    st.write(f"**Final Recall**: {recall:.2f}")
+    st.write(f"**Final F1 Score**: {f1:.2f}")

@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 # Set up page configuration
 st.set_page_config(page_title="Dashboard", layout="wide")
 
-# Create a MySQL engine (replace with your MySQL credentials)
+# Create a MySQL engine
 engine = create_engine('mysql+mysqlconnector://root:minu2001@localhost/delivergate')
 
 # Load data from MySQL

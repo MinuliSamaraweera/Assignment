@@ -1,5 +1,3 @@
-# Internship Data Engineer Technical Test
-
 # Streamlit Dashboard for Customer Orders
 
 This Streamlit app is a dashboard for visualizing and filtering customer orders from a MySQL database. It includes filters for order date, minimum total amount spent, and minimum number of orders, and displays metrics, bar charts, and line charts to summarize customer spending and order patterns.
